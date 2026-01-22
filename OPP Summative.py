@@ -7,6 +7,10 @@
 
 import pygame
 import random
+from os import path
+
+img_dir = path.join(path.dirname(__file__), 'img')
+snd_dir = path.join(path.dirname(__file__), 'snd')
 
 WIDTH = 1200
 HEIGHT = 650
@@ -35,6 +39,10 @@ DEATH_MSG = ['YOU DIED',
              'awooga',
              'Man you suck',
              "I've seen a toddler do better",
+             "Man you didn't see that comming",
+             "You have to dodge the red squarse not hug them",
+             'oh nono',
+             'Gonna cry',
              ]
 
 def newmob():
@@ -58,7 +66,7 @@ def draw_health_bar(surf, x, y, pct):
     fill = (pct / 200) * BAR_LENGTH
     outline_rect = pygame.Rect(x, y, BAR_LENGTH, BAR_HEIGHT)
     fill_rect = pygame.Rect(x, y, fill, BAR_HEIGHT)
-    pygame.draw.rect(surf, DARK_BLUE, fill_rect)
+    pygame.draw.rect(surf, GREEN, fill_rect)
     pygame.draw.rect(surf, WHITE, outline_rect, 4)
 
 def backround_color(health):
@@ -83,12 +91,17 @@ def get_shake_offset(health):
     
     return offset_x, offset_y
 
+def draw_transparent_scanlines(surf, spacing=4, alpha=40):
+    scanline = pygame.Surface((WIDTH, 1), pygame.SRCALPHA)
+    scanline.fill((0, 0, 0, alpha))  # RGBA: transparent black
+
+    for y in range(0, HEIGHT, spacing):
+        surf.blit(scanline, (0, y))
+
 def apply_crt_effect(surface):
-    """Apply CRT effect to the surface without hiding sprites and keeping scanlines."""
-    # Start with a copy of the game surface
     shifted = surface.copy()
 
-    # Step 1: RGB ghosting
+    # --- RGB split ---
     r = shifted.copy()
     g = shifted.copy()
     b = shifted.copy()
@@ -97,35 +110,30 @@ def apply_crt_effect(surface):
     g.fill((0, 255, 0), special_flags=pygame.BLEND_MULT)
     b.fill((0, 0, 255), special_flags=pygame.BLEND_MULT)
 
-    # Combine channels onto a temp surface
     temp = pygame.Surface(surface.get_size())
     temp.fill((0, 0, 0))
     temp.blit(r, (-2, 0))
     temp.blit(g, (2, 0))
     temp.blit(b, (0, 0))
 
-    # Step 2: Flicker (mid-gray overlay)
+    # --- Flicker ---
     flicker = random.randint(-15, 15)
     flicker_color = max(0, min(255, 128 + flicker))
     overlay = pygame.Surface((WIDTH, HEIGHT))
     overlay.fill((flicker_color, flicker_color, flicker_color))
-    overlay.set_alpha(30)
+    overlay.set_alpha(25)
     temp.blit(overlay, (0, 0))
 
-    # Step 3: Merge the CRT effect on top of the original game surface
     shifted.blit(temp, (0, 0), special_flags=pygame.BLEND_ADD)
 
-    # Step 4: Draw **scanlines** on top so they remain visible
-    SCANLINE_COLOR = (30, 30, 30)  # dark gray, softer than black
-    for y in range(0, HEIGHT, 4):
-        pygame.draw.line(shifted, SCANLINE_COLOR, (0, y), (WIDTH, y), 1)
+    draw_transparent_scanlines(shifted, spacing=5, alpha=90)
 
     return shifted
 
 def draw_menu(screen):
     menu_surface = pygame.Surface((WIDTH, HEIGHT))
     menu_surface.fill(BLACK)
-    draw_text(menu_surface, "OPP", 80, WIDTH / 2, HEIGHT / 4, WHITE)
+    draw_text(menu_surface, "OPP", 100, WIDTH / 2, HEIGHT / 4, WHITE)
     draw_text(menu_surface, "Press SPACE to Start", 40, WIDTH / 2, HEIGHT / 2, WHITE)
     draw_text(menu_surface, "WASD to Move", 30, WIDTH / 2, HEIGHT / 2 + 60, WHITE)
 
@@ -156,8 +164,8 @@ def reset_game():
 class Player(pygame.sprite.Sprite):
     def __init__(self):
         pygame.sprite.Sprite.__init__(self)
-        self.image = pygame.Surface((20, 20))
-        self.image.fill(BLUE)
+        self.image = pygame.transform.scale(player_image, (20,20))
+        self.image.set_colorkey(BLACK)
         self.rect = self.image.get_rect()
         self.rect.centerx = WIDTH / 2
         self.rect.centery = HEIGHT / 2
@@ -199,13 +207,13 @@ class Player(pygame.sprite.Sprite):
 class Mob(pygame.sprite.Sprite):
     def __init__(self):
         pygame.sprite.Sprite.__init__(self)
-        self.image = pygame.Surface((30, 30))
         if random.random() > 0.90:
-            self.image.fill(GREEN)
+            self.image = pygame.transform.scale(health_image, (25,25))
             self.type = 'heal'
         else:
-            self.image.fill(RED)
+            self.image = pygame.transform.scale(fireball_image, (25,25))
             self.type = 'damage'
+        self.image.set_colorkey(BLACK)
         self.rect = self.image.get_rect()
         self.rect.x = random.randrange(WIDTH - self.rect.width)
         self.rect.y = HEIGHT + random.randrange(40, 100)
@@ -216,25 +224,47 @@ class Mob(pygame.sprite.Sprite):
         self.rect.x += self.speedx
         self.rect.y += self.speedy
         if self.rect.bottom < -10 or self.rect.left < -25 or self.rect.right > WIDTH + 25:
-            self.rect.x = random.randrange(WIDTH - self.rect.width)
-            self.rect.y = HEIGHT + random.randrange(40, 100)
-            self.speedy = -random.randrange(4, 8)
-            self.speedx = random.randrange(-3, 3)
+            newmob()
+            self.kill()
+            
 
 class Goal(pygame.sprite.Sprite):
     def __init__(self):
         pygame.sprite.Sprite.__init__(self)
-        self.image = pygame.Surface((50, 50))
-        self.image.fill(GREEN)
+        self.image = pygame.transform.scale(goal_image, (50,50))
+        self.image.set_colorkey(BLACK)
         self.rect = self.image.get_rect()
         self.rect.x = random.randrange(50, WIDTH - 50)
         self.rect.y = random.randrange(50, HEIGHT - 50)
     
-    def update(self):
-        pass
-    
-        
-        
+# initialize pygame and create window
+pygame.init()
+pygame.mixer.init()
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+game_surface = pygame.Surface((WIDTH, HEIGHT))
+pygame.display.set_caption("OOP")
+clock = pygame.time.Clock()
+score = 0
+
+
+MENU_MUSIC = 'Static.mp3'
+GAME_MUSIC = 'Let the Fire Die.mp3'
+
+goal_collect = pygame.mixer.Sound(path.join(snd_dir, 'goal.wav'))
+heal_sound = pygame.mixer.Sound(path.join(snd_dir, 'heal.wav'))
+hit_sound = pygame.mixer.Sound(path.join(snd_dir, 'hit.wav'))
+game_over = pygame.mixer.Sound(path.join(snd_dir, 'game over.mp3'))
+
+player_image = pygame.image.load(path.join(img_dir, "player.png")).convert()
+fireball_image = pygame.image.load(path.join(img_dir, "fireball.png")).convert()
+health_image = pygame.image.load(path.join(img_dir, "health.png")).convert()
+goal_image = pygame.image.load(path.join(img_dir, "goal.png")).convert()
+
+state = MENU
+pygame.mixer.music.load(path.join(snd_dir, MENU_MUSIC))
+pygame.mixer.music.play(-1)
+pygame.display.set_icon(player_image)
+
 all_sprites = pygame.sprite.Group()
 mobs = pygame.sprite.Group()
 goal = pygame.sprite.Group()
@@ -245,23 +275,6 @@ goal.add(g)
 all_sprites.add(goal)
 for i in range(35):
     newmob()
-
-# initialize pygame and create window
-pygame.init()
-pygame.mixer.init()
-screen = pygame.display.set_mode((WIDTH, HEIGHT))
-game_surface = pygame.Surface((WIDTH, HEIGHT))
-pygame.display.set_caption("OOP")
-clock = pygame.time.Clock()
-score = 0
-MENU_MUSIC = 'Static.mp3'
-GAME_MUSIC = 'Let the Fire Die.mp3'
-
-game_over = pygame.mixer.Sound('game over.mp3')
-state = MENU
-pygame.mixer.music.load(MENU_MUSIC)
-pygame.mixer.music.play(-1)
-
 
 # Game loop
 running = True
@@ -275,7 +288,7 @@ while running:
         if state == MENU and event.type == pygame.KEYDOWN:
             if event.key == pygame.K_SPACE:
                 state = PLAYING
-                pygame.mixer.music.load(GAME_MUSIC)
+                pygame.mixer.music.load(path.join(snd_dir, GAME_MUSIC))
                 pygame.mixer.music.play(-1, 0.0, 2000)
                 
     if state == MENU:
@@ -293,8 +306,10 @@ while running:
         hits = pygame.sprite.spritecollide(player, mobs, True)
         for hit in hits:
             if hit.type == 'damage':
+                hit_sound.play()
                 player.health -= 75
             if hit.type == 'heal':
+                heal_sound.play()
                 player.health += 30
                 if player.health > 200:
                     player.health = 200
@@ -305,20 +320,22 @@ while running:
             player.health += 75
             if player.health >= 200:
                 player.health = 200
+            goal_collect.play()
             g = Goal()
             all_sprites.add(g)
             goal.add(g)
         
         if player.health <= 0:
             death_msg = random.choice(DEATH_MSG)
-            
+            game_over.play()
             pygame.mixer.music.stop()
-            pygame.mixer.music.load(MENU_MUSIC)
+            pygame.mixer.music.load(path.join(snd_dir, MENU_MUSIC))
             pygame.mixer.music.play(-1, 0.0, 10000)
             
             death_surface = pygame.Surface((WIDTH, HEIGHT))
             death_surface.fill(WHITE)
             all_sprites.draw(death_surface)
+            draw_text(death_surface, str(score), 50, WIDTH/2, 10, BLACK)
             draw_text(death_surface, death_msg , 50, WIDTH / 2, HEIGHT / 2, BLACK)
             
             crt_death_surface = apply_crt_effect(death_surface)
